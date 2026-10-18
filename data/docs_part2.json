@@ -1,0 +1,77 @@
+[
+  {
+    "doc_id": "delta_merge_conflict",
+    "title": "Delta Lake Concurrent Merge Conflict Failures",
+    "text": "**Symptoms:** Spark write operations fail with `ConcurrentAppendException` or `MetadataChangedException` when multiple Azure Data Factory pipelines execute concurrent updates or inserts against the same target Delta table.\n\n**Root Cause:** Delta Lake ensures ACID transactions by validating snapshot isolation. When two concurrent writes attempt to modify overlapping partitions or files simultaneously, one transaction fails because its base version has been superseded by a newer commit.\n\n**Step-by-Step Fix:**\n1. Review the ADF pipeline schedules and concurrency settings to identify overlapping job windows.\n2. Wrap the merge or update logic in a retry block with exponential backoff using a Python try-except wrapper.\n3. Tune the Delta isolation level if applicable, or restructure pipeline dependencies to run sequentially rather than concurrently.\n\n**Prevention:** Implement mutual exclusion locks or schedule dependent ADF pipelines using sequential chaining (`Depends On` activity success) instead of parallel triggers on the same table."
+  },
+  {
+    "doc_id": "concurrent_write_error",
+    "title": "Concurrent Write Exception During Table Appends",
+    "text": "**Symptoms:** Streaming queries or multiple batch notebooks fail with `ConcurrentWriteException` stating that files were added by another concurrent operation.\n\n**Root Cause:** Multiple independent Databricks jobs or streaming micro-batches are writing to the exact same Delta table path without proper coordination or partition isolation.\n\n**Step-by-Step Fix:**\n1. Identify all active jobs or streams writing to the target path from the Databricks clusters UI.\n2. Stop duplicate or uncoordinated streaming streams immediately.\n3. Repartition the data streams by unique partition keys to minimize file-level overlap before writing.\n\n**Prevention:** Assign dedicated output paths or tables for distinct data streams. Use Delta Live Tables (DLT) or a centralized orchestration layer to manage table write access safely."
+  },
+  {
+    "doc_id": "table_not_found_after_rename",
+    "title": "Table Not Found Error After Table Renaming or Dropping",
+    "text": "**Symptoms:** Downstream Azure Data Factory notebooks or Spark SQL queries fail with `TableOrViewNotFoundException` immediately after a table renaming or schema refactoring script runs.\n\n**Root Cause:** Downstream queries reference the old physical table name or metastore namespace, while the upstream refactoring script failed to update Unity Catalog or Hive metastore pointers atomically.\n\n**Step-by-Step Fix:**\n1. Check the Unity Catalog or Hive metastore history to verify the new table location and name.\n2. Update downstream ADF notebook parameters and SQL scripts to reflect the correct table identifier (`catalog.schema.table`).\n3. Recreate views or aliases if backward compatibility is required for older reporting layers.\n\n**Prevention:** Use alias tables, views, or delta symlinks during table migrations. Implement a deprecation notice window before removing old table references."
+  },
+  {
+    "doc_id": "permission_denied_on_catalog",
+    "title": "Permission Denied on Catalog or Schema Access",
+    "text": "**Symptoms:** Databricks SQL queries or ADF notebook executions fail with `[PERMISSION_DENIED] User does not have privilege` when trying to read or write tables in Unity Catalog.\n\n**Root Cause:** The service principal or user identity executing the pipeline lacks explicit GRANT privileges (`USE CATALOG`, `USE SCHEMA`, `SELECT`, or `MODIFY`) on the target Unity Catalog assets.\n\n**Step-by-Step Fix:**\n1. Log into the Databricks workspace as a metastore admin or catalog owner.\n2. Execute an explicit grant statement in a SQL notebook: `GRANT SELECT, MODIFY ON CATALOG catalog_name TO `service_principal_id`;`.\n3. Verify the role assignment in Azure Data Factory linked service authentication settings.\n\n**Prevention:** Establish role-based access control (RBAC) templates and Terraform infrastructure-as-code scripts to provision catalog permissions automatically during pipeline deployment."
+  },
+  {
+    "doc_id": "expired_credentials",
+    "title": "Authentication Failure Due to Expired Azure Credentials",
+    "text": "**Symptoms:** Pipelines fail with `ClientSecretCredential authentication failed` or `TokenExpired` errors when ADF attempts to connect to Azure Data Lake Storage or Databricks APIs.\n\n**Root Cause:** The client secret associated with the Azure App Registration used by ADF or Databricks service principals has reached its expiration date.\n\n**Step-by-Step Fix:**\n1. Navigate to Azure Active Directory (Microsoft Entra ID) and generate a new client secret for the app registration.\n2. Update the secret value in ADF Linked Services and Databricks secret scopes immediately.\n3. Trigger a manual test run of the pipeline to verify successful authentication.\n\n**Prevention:** Set calendar reminders 30 days prior to secret expiration. Use managed identities instead of client secrets wherever Azure infrastructure supports them."
+  },
+  {
+    "doc_id": "secret_scope_error",
+    "title": "Secret Scope Retrieval Failure in Databricks Notebooks",
+    "text": "**Symptoms:** Databricks notebooks fail with `RESOURCE_DOES_NOT_EXIST` or `PERMISSION_DENIED` when attempting to fetch database passwords or API keys using `dbutils.secrets.get()`.\n\n**Root Cause:** The requested secret scope does not exist, was deleted, or the executing cluster lacks access control permissions to read from the Azure Key Vault backed secret scope.\n\n**Step-by-Step Fix:**\n1. Verify secret scope existence using Databricks CLI: `databricks secrets scopes list`.\n2. Check that the Azure Key Vault backing secret scope is properly linked and active in Azure Portal.\n3. Grant read permissions on the secret scope to the appropriate Databricks group using `databricks secrets acls put`.\n\n**Prevention:** Use automated deployment scripts (ARM/Bicep or Terraform) to provision secret scopes and access control lists consistently across development, test, and production workspaces."
+  },
+  {
+    "doc_id": "adf_pipeline_failed_activity",
+    "title": "Azure Data Factory Pipeline Failure Due to Activity Error",
+    "text": "**Symptoms:** ADF monitoring dashboard reports a pipeline failure status, with the Databricks notebook activity showing a red cross and failure exit code.\n\n**Root Cause:** The underlying PySpark notebook encountered an unhandled exception (such as a bad file path, syntax error, or assertion failure) and exited with a non-zero status code.\n\n**Step-by-Step Fix:**\n1. Click on the failed ADF activity run and follow the link to the Databricks cluster driver logs and notebook output.\n2. Inspect the stack trace to identify the exact line of code causing the failure.\n3. Fix the notebook code, commit changes to git, and rerun the failed ADF pipeline from the failed activity.\n\n**Prevention:** Implement robust try-except error handling blocks within PySpark scripts and add custom logging to capture actionable error messages before notebook termination."
+  },
+  {
+    "doc_id": "adf_trigger_missed",
+    "title": "Azure Data Factory Scheduled Trigger Missed Execution",
+    "text": "**Symptoms:** Expected daily ETL pipelines fail to kick off at their scheduled time, resulting in stale downstream analytical dashboards.\n\n**Root Cause:** The ADF tumbling window or schedule trigger was accidentally left in a `Stopped` state, or encountered transient platform throttling during scheduling evaluation.\n\n**Step-by-Step Fix:**\n1. Navigate to the ADF Author/Monitor hub and inspect the trigger status.\n2. Start the stopped trigger manually through the portal or Azure PowerShell SDK.\n3. Use the ADF rerun functionality to backfill missing window runs for the affected dates.\n\n**Prevention:** Set up Azure Monitor alerts for trigger failures and stopped states. Use CI/CD deployment pipelines to ensure triggers are automatically published in active states."
+  },
+  {
+    "doc_id": "rest_api_rate_limit",
+    "title": "REST API Rate Limit Exceeded During Data Ingestion",
+    "text": "**Symptoms:** ADF Web Activity or Databricks custom ingestion script fails with HTTP `429 Too Many Requests` status code.\n\n**Root Cause:** Ingestion loops sent too many concurrent requests to an external SaaS REST API endpoint within a short time window, breaching the provider's rate limiting thresholds.\n\n**Step-by-Step Fix:**\n1. Pause the ingestion pipeline immediately to avoid IP blacklisting.\n2. Modify the ingestion script or ADF paging settings to introduce deliberate delays (`time.sleep`) between API calls.\n3. Implement exponential backoff and retry logic for all outgoing HTTP requests.\n\n**Prevention:** Respect upstream API rate headers. Design batch ingestion patterns that pull data incrementally using pagination and concurrency limits."
+  },
+  {
+    "doc_id": "rest_api_empty_response",
+    "title": "REST API Empty Response Causing Downstream Parsing Failures",
+    "text": "**Symptoms:** Spark ingestion job fails with `AnalysisException: No such struct field` or parses zero rows when reading JSON payloads from an external REST API.\n\n**Root Cause:** The upstream REST API returned an empty array `[]` or a null data payload due to filter criteria returning no results or temporary API degradation.\n\n**Step-by-Step Fix:**\n1. Inspect raw API response payloads stored in the bronze landing container using Azure Storage Explorer.\n2. Add defensive checks in PySpark to verify DataFrame row count before applying schema transformations: `if df.count() == 0: sys.exit(0)`.\n3. Handle empty schemas gracefully without throwing parsing errors.\n\n**Prevention:** Add robust schema validation and empty-payload handling routines in all bronze ingestion notebooks. Implement alerting when API record counts drop below expected baselines."
+  },
+  {
+    "doc_id": "bad_csv_delimiter",
+    "title": "Bad CSV Delimiter Causing Column Shifting and Parsing Errors",
+    "text": "**Symptoms:** Downstream Delta tables contain scrambled data columns, misplaced values, or rows shifted by several columns after ingesting flat CSV files.\n\n**Root Cause:** The upstream CSV file contained unescaped embedded commas or quotation marks within text fields, while the Spark CSV reader was configured with default comma delimiters and standard quote settings.\n\n**Step-by-Step Fix:**\n1. Inspect raw CSV files in ADLS Gen2 using a text editor to check delimiter and quote character usage.\n2. Update Spark read options explicitly: `.option('delimiter', ',').option('quote', '\"').option('escape', '\"')`.\n3. Reprocess the affected partition by overwriting the corrupted bronze and silver layers.\n\n**Prevention:** Enforce strict file format standards with upstream data providers (e.g., switching to Parquet or Delta format, or using pipe `|` delimiters)."
+  },
+  {
+    "doc_id": "corrupt_json_record",
+    "title": "Corrupt JSON Record Causing Spark Parsing Job Failure",
+    "text": "**Symptoms:** Spark streaming or batch job fails with `BadRecordException` or `JsonParseException` when reading raw JSON event streams.\n\n**Root Cause:** Upstream client applications sent malformed JSON strings, unclosed brackets, or corrupted text lines into the landing storage container.\n\n**Step-by-Step Fix:**\n1. Configure the Spark JSON reader to use PERMISSIVE mode with a corrupt record column: `.option('mode', 'PERMISSIVE').option('columnNameOfCorruptRecord', '_corrupt_record')`.\n2. Rerun the pipeline to isolate and capture malformed records into a dedicated error table.\n3. Proceed with processing valid records.\n\n**Prevention:** Monitor error record tables regularly and notify upstream application teams when malformed JSON rates exceed acceptable thresholds."
+  },
+  {
+    "doc_id": "time_zone_mismatch",
+    "title": "Time Zone Mismatch Causing Date Partition Discrepancies",
+    "text": "**Symptoms:** Partition folders in ADLS Gen2 show data stamped with yesterday's date, causing daily reports to miss recent transactions.\n\n**Root Cause:** Spark cluster default time zone differed from the source application time zone (e.g., UTC vs. local business time), causing timestamp casting and date extractions to shift partition boundaries.\n\n**Step-by-Step Fix:**\n1. Explicitly set the session timezone in Spark SQL or notebook config: `spark.sql(\"SET spark.sql.session.timeZone = 'UTC'\")`.\n2. Standardize timestamp conversions using `from_utc_timestamp` or `to_utc_timestamp` during bronze ingestion.\n3. Backfill and regenerate affected date partitions.\n\n**Prevention:** Enforce UTC as the universal standard timezone across all Spark clusters, ADF pipelines, and storage layers. Convert to local time strictly at the presentation layer."
+  },
+  {
+    "doc_id": "backfill_procedure",
+    "title": "Historical Backfill Procedure Overwriting Current Data",
+    "text": "**Symptoms:** Running a historical backfill pipeline inadvertently wipes out or corrupts the most recent production data partitions in the silver Delta table.\n\n**Root Cause:** The backfill script was executed without restricting date filters or used static partition overwrite mode, causing it to overwrite the entire table root instead of targeted historical date ranges.\n\n**Step-by-Step Fix:**\n1. Access Delta table history using `DESCRIBE HISTORY table_name` to locate the version prior to the backfill execution.\n2. Restore the table state using `RESTORE TABLE table_name TO VERSION AS OF N`.\n3. Rerun the backfill job with strict date filter predicates and dynamic partition overwrite enabled.\n\n**Prevention:** Design all backfill notebooks to accept parameterized start and end dates. Test backfill scripts in development environments before running against production tables."
+  },
+  {
+    "doc_id": "job_running_twice",
+    "title": "Pipeline Job Running Twice Due to Overlapping Triggers",
+    "text": "**Symptoms:** Duplicate processing runs occur simultaneously, leading to inflated billing costs, cluster resource contention, and data duplication in Delta tables.\n\n**Root Cause:** Both an ADF schedule trigger and an event-based storage trigger were inadvertently attached to the same ingestion pipeline, causing duplicate concurrent executions upon file arrival.\n\n**Step-by-Step Fix:**\n1. Inspect ADF trigger configurations and disable redundant trigger instances.\n2. Check Delta table history for duplicate commits and roll back or deduplicate affected partitions.\n3. Verify pipeline concurrency limits in ADF settings.\n\n**Prevention:** Document orchestration dependencies clearly in architecture diagrams. Conduct thorough integration testing in staging environments prior to releasing new triggers."
+  }
+]

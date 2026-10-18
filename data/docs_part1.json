@@ -1,0 +1,77 @@
+[
+{
+"doc_id": "schema_drift",
+"title": "Schema Drift Causing Column Mismatch Failures",
+"text": "Symptoms: Delta Lake append pipeline fails with A schema mismatch detected or spark.sql.execution.arrow.maxRecordsPerBatch errors after upstream added a new column or changed data types.\n\nRoot Cause: The upstream source table added a new column or altered column types, and the default Spark DataFrame writer mode (error or errorifexists) rejected the incoming batch because spark.databricks.delta.schema.autoMerge.enabled was set to false.\n\nStep-by-Step Fix:\n1. Inspect the incoming data schema using display(df.limit(1)) in a Databricks notebook.\n2. Enable automatic schema merging in your Spark write configuration: .option(\"mergeSchema\", \"true\") or set spark.databricks.delta.schema.autoMerge.enabled = true globally.\n3. Rerun the failed Azure Data Factory pipeline or Spark streaming micro-batch.\n4. Verify that downstream tables and BI reports handle the newly introduced column correctly.\n\nPrevention: Implement schema validation checks in ADF or use Delta Live Tables (DLT) with expectation rules and automated schema evolution enabled. Establish a notification webhook with upstream data producers whenever contract changes occur."
+},
+{
+"doc_id": "data_skew",
+"title": "Severe Data Skew Causing Task Hangs and OOM",
+"text": "Symptoms: Spark job hangs at 99% completion on a single remaining task, or throws ExecutorLostFailure and java.lang.OutOfMemoryError during a join or groupBy operation.\n\nRoot Cause: A high concentration of null values or a heavily dominant key (e.g., empty string or default ID -1) in the join/group key causes one executor to process 90% of the shuffle partition data while others finish instantly.\n\nStep-by-Step Fix:\n1. Identify the skewed key using df.groupBy('key').count().orderBy(col('count').desc()).show().\n2. Filter out or isolate dummy/null keys before performing joins.\n3. Apply a salt technique: append a random integer suffix (e.g., rand_salt) to the skewed key on one side and expand the joining dataframe on the other side.\n4. Alternatively, enable AQE (Adaptive Query Execution) by setting spark.sql.adaptive.enabled = true and spark.sql.adaptive.skewJoin.enabled = true.\n\nPrevention: Enforce null checks in data ingestion pipelines. Regularly monitor Spark UI shuffle read sizes per task during CI/CD regression tests."
+},
+{
+"doc_id": "out_of_memory_error",
+"title": "Driver Out-of-Memory Error During Collect Operation",
+"text": "Symptoms: PySpark job crashes with java.lang.OutOfMemoryError: Java heap space or GC overhead limit exceeded on the driver node during execution.\n\nRoot Cause: Developer used .collect() or .toPandas() on a large distributed DataFrame without filtering or aggregation, attempting to pull gigabytes of distributed partitions into the single driver memory space.\n\nStep-by-Step Fix:\n1. Restart the Databricks cluster or detach/reattach the notebook.\n2. Replace .collect() with distributed operations, or use .take(10) or .limit(100) strictly for debugging.\n3. If Pandas conversion is necessary, use Arrow optimization (spark.sql.execution.arrow.pyspark.enabled = true) and process data in smaller chunks or aggregate before converting.\n4. Scale up the driver node instance type if large metadata collections are unavoidable.\n\nPrevention: Establish strict code review guidelines prohibiting .collect() on datasets exceeding 100MB. Use static code analysis tools to flag memory-intensive driver actions."
+},
+{
+"doc_id": "too_many_small_files",
+"title": "Too Many Small Files Causing Metadata Bottlenecks",
+"text": "Symptoms: Spark queries and Delta table operations take progressively longer, throwing java.io.FileNotFoundException or experiencing high driver CPU utilization during query planning.\n\nRoot Cause: Frequent streaming micro-batches or regular ADF appends write thousands of KB-sized files into the Delta table directory, bloating the Delta transaction log and overwhelming the file system metadata layer.\n\nStep-by-Step Fix:\n1. Run manual optimization on the affected table: OPTIMIZE table_name ZORDER BY (frequent_filter_col);.\n2. Vacuum old file versions if appropriate: VACUUM table_name RETAIN 168 HOURS;.\n3. Tune your streaming sink to use .option('minFilesPerCheck', ...) or batch write intervals to group data before committing.\n\nPrevention: Enable Databricks predictive optimization or configure auto-compaction (spark.databricks.delta.autoOptimize.optimizeWrite = true and autoCompact.enabled = true) on all production Delta tables."
+},
+{
+"doc_id": "late_upstream_data",
+"title": "Late Arriving Upstream Data Missing from Partitioned Batch",
+"text": "Symptoms: Daily aggregation reports show missing metrics or incomplete counts for yesterday, while upstream source systems indicate records were successfully generated.\n\nRoot Cause: Azure Data Factory executed the daily pipeline precisely at midnight, but upstream source ingestion pipelines finished 2 hours late, resulting in partition data being processed before all files arrived.\n\nStep-by-Step Fix:\n1. Identify the missing partition paths in Azure Data Lake Storage (ADLS Gen2).\n2. Manually trigger a backfill run in ADF for the specific date partition.\n3. Run an idempotent Spark MERGE INTO notebook to upsert the late records into the target Delta table without duplicating existing rows.\n\nPrevention: Implement watermarking and bounded lateness windows in Spark Structured Streaming, or add dependency triggers in ADF that verify file existence and completeness markers (e.g., _SUCCESS files) before triggering downstream jobs."
+},
+{
+"doc_id": "duplicate_records",
+"title": "Duplicate Records Ingested Due to Retry Logic",
+"text": "Symptoms: Business users report doubled revenue or inflated transaction counts in gold layer analytical tables.\n\nRoot Cause: An Azure Data Factory pipeline or Spark streaming job failed halfway through execution; upon automatic retry, it re-read and re-appended source files that were already processed in the previous partial run.\n\nStep-by-Step Fix:\n1. Query the Delta table history using DESCRIBE HISTORY table_name to identify the commit version where duplication occurred.\n2. Roll back the table to the pre-duplicate version using RESTORE TABLE table_name TO VERSION AS OF N.\n3. Alternatively, execute a deduplication script using dropDuplicates() on natural business keys and overwrite the partition.\n\nPrevention: Design all pipeline write operations to be idempotent using Delta Lake MERGE INTO statements based on unique business keys rather than blind appends."
+},
+{
+"doc_id": "job_timeout",
+"title": "Azure Data Factory Job Timeout During Heavy Load",
+"text": "Symptoms: ADF pipeline execution fails with ActivityTimedOut after running for exactly 12 hours without finishing.\n\nRoot Cause: The default timeout threshold configured on the ADF Databricks notebook activity was exceeded because upstream data volume spiked 300% due to an annual sales event, and cluster autoscaling was not properly tuned.\n\nStep-by-Step Fix:\n1. Check the ADF pipeline run monitor to confirm execution duration and identify the bottleneck activity.\n2. Temporarily increase the timeout limit in ADF activity settings (e.g., to 24 hours).\n3. Optimize the underlying Spark job by partitioning data effectively and increasing max workers for the job cluster.\n\nPrevention: Set up proactive metric alerts in Azure Monitor when pipeline durations exceed 150% of historical baselines. Implement dynamic chunking or partitioning for large data batches."
+},
+{
+"doc_id": "compute_start_failure",
+"title": "Cluster Compute Start Failure Due to Quota Exhaustion",
+"text": "Symptoms: Databricks job fails immediately with AzureCloudException or CloudProviderResourceExhausted during cluster provisioning.\n\nRoot Cause: Azure regional vCPU core quotas for the requested VM SKU (e.g., Standard_DSv3 or GPU instances) were fully consumed by concurrent workloads or infrastructure limits.\n\nStep-by-Step Fix:\n1. Check Azure portal subscription limits and usage quotas for the specific region.\n2. Modify the Databricks cluster configuration to use an alternative, readily available VM family (e.g., switching from Standard_E* to Standard_D* series).\n3. Stagger scheduled ADF pipeline start times to prevent concurrent cluster spin-ups from hitting rate limits.\n\nPrevention: Request a proactive quota increase from Azure support well ahead of projected data growth. Configure cluster pools in Databricks to maintain warm instances ready for instant attachment."
+},
+{
+"doc_id": "wrong_data_types_after_join",
+"title": "Wrong Data Types After Join Causing Downstream Parsing Errors",
+"text": "Symptoms: Downstream silver-to-gold Spark transformations fail with Cast error or populate columns with null values after a multi-table join.\n\nRoot Cause: Joining two tables where a key column had differing data types (e.g., string order_id joined with integer order_id) caused Spark to perform implicit casting or return nulls for unmatched rows.\n\nStep-by-Step Fix:\n1. Inspect schema types before and after the join using df.printSchema().\n2. Explicitly cast join keys to a common data type prior to executing the join: df1.withColumn('id', col('id').cast('string')).\n3. Rerun the affected transformation notebook and verify column integrity.\n\nPrevention: Enforce strict bronze-to-silver schema contracts and validation rules. Never rely on implicit type casting in join predicates."
+},
+{
+"doc_id": "null_values_breaking_a_join",
+"title": "Null Values Causing Unintended Data Loss in Inner Joins",
+"text": "Symptoms: Output row count after a join is unexpectedly small, dropping 40% of records without throwing any explicit error.\n\nRoot Cause: An inner join was performed on key columns containing unexpected null values. In Spark, inner joins drop any rows where the join key evaluates to null on either side.\n\nStep-by-Step Fix:\n1. Audit pre-join row counts for both dataframes: df1.filter(col('key').isNull()).count().\n2. Switch the join type from inner to left or full outer join depending on business requirements.\n3. Handle null keys explicitly using coalesce or filtering out invalid records before joining.\n\nPrevention: Incorporate data profiling steps in exploratory notebooks and add unit tests using pytest-spark to verify row retention across joins."
+},
+{
+"doc_id": "partition_overwrite_deleted_data",
+"title": "Partition Overwrite Accidentally Deleting Historical Data",
+"text": "Symptoms: Querying a Delta table returns only today's data; all historical partitions prior to the current run have disappeared.\n\nRoot Cause: Dynamic partition overwrite (spark.sql.sources.partitionOverwriteMode = dynamic) was disabled or misconfigured, causing Spark to overwrite the entire root table directory instead of only the target partition.\n\nStep-by-Step Fix:\n1. Access Delta table history using DESCRIBE HISTORY table_name to locate the commit version right before the destructive overwrite.\n2. Restore the table instantly using RESTORE TABLE table_name TO VERSION AS OF N.\n3. Verify data is fully restored by running a verification query.\n\nPrevention: Set spark.sql.sources.partitionOverwriteMode to dynamic explicitly in all ETL session configurations. Grant write permissions strictly through service principals."
+},
+{
+"doc_id": "slow_join",
+"title": "Slow Join Causing Spark Job Bottlenecks",
+"text": "Symptoms: Spark job execution stalls for hours at a broadcast or sort-merge join stage with high shuffle read metrics.\n\nRoot Cause: Spark attempted a sort-merge join on two massive unpartitioned tables because one table exceeded the default broadcast threshold (spark.sql.autoBroadcastJoinThreshold = 10MB), triggering a massive network shuffle.\n\nStep-by-Step Fix:\n1. Analyze the Spark UI SQL tab to identify the slow join stage and table sizes.\n2. Explicitly force broadcast of the smaller dimension table using the broadcast hint: df1.join(broadcast(df2), 'id').\n3. Ensure both tables are bucketed or repartitioned on the join key if they are both exceptionally large.\n\nPrevention: Regularly review table statistics using ANALYZE TABLE table_name COMPUTE STATISTICS FOR COLUMNS so Catalyst optimizer can make accurate cost-based join decisions."
+},
+{
+"doc_id": "shuffle_spill_to_disk",
+"title": "Shuffle Spill to Disk Degrading Spark Performance",
+"text": "Symptoms: Databricks Spark job runs significantly slower than normal, with Spark UI showing high Shuffle Spill (memory) and Shuffle Spill (disk) metrics.\n\nRoot Cause: Executors ran out of memory allocated for shuffle operations during heavy aggregations or joins, forcing Spark to serialize and write intermediate shuffle data to local worker node disks.\n\nStep-by-Step Fix:\n1. Scale up the Databricks cluster worker nodes to a memory-optimized instance type (e.g., Standard_E* series).\n2. Increase the number of shuffle partitions by setting spark.sql.shuffle.partitions to a higher value proportional to data volume.\n3. Enable AQE (spark.sql.adaptive.enabled = true) to let Spark dynamically coalesce shuffle partitions.\n\nPrevention: Monitor shuffle spill metrics in Databricks cluster monitoring dashboards and size worker instances appropriately for peak workloads."
+},
+{
+"doc_id": "checkpoint_corruption",
+"title": "Structured Streaming Checkpoint Corruption Halting Pipeline",
+"text": "Symptoms: Streaming pipeline fails repeatedly with CorruptedMetadataException or Inconsistent snapshot errors when trying to resume from checkpoint location.\n\nRoot Cause: Concurrent jobs attempted to write to the same Spark Structured Streaming checkpoint directory in ADLS Gen2, or an abrupt cluster termination corrupted the commit logs.\n\nStep-by-Step Fix:\n1. Stop the failing streaming query immediately.\n2. Back up the existing corrupt checkpoint directory for forensic analysis.\n3. If recovery is unfeasible, reset the checkpoint path to a fresh directory and reprocess from the source starting offset (ensuring downstream sink idempotency).\n\nPrevention: Strictly enforce unique, isolated checkpoint paths for every streaming pipeline. Never share checkpoint directories across multiple queries."
+},
+{
+"doc_id": "data_quality_check_failing",
+"title": "Data Quality Validation Failure Blocking Pipeline Progression",
+"text": "Symptoms: ADF pipeline fails with a custom exception activity after a data validation notebook reports anomalous null counts or out-of-range values.\n\nRoot Cause: Upstream source data introduced corrupted values (e.g., negative prices or future dates) that violated predefined business expectations in the silver validation layer.\n\nStep-by-Step Fix:\n1. Inspect the validation logs and error summary tables generated by the Databricks notebook.\n2. Quarantine the failing records into a designated error/bad-records Delta table for compliance review.\n3. Allow valid records to proceed by filtering out the quarantined rows, or pause the pipeline if upstream correction is mandatory.\n\nPrevention: Implement automated data quality frameworks (such as Great Expectations or Delta Live Tables expectations) to catch anomalies early and alert data producers via automated email or Slack integrations."
+}
+]
