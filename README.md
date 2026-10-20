@@ -232,6 +232,6 @@ The Job runs on serverless compute and completed successfully (about 10 minutes 
 **Aarti Paliwal**: Associate Software Engineer | Azure Databricks | Data Engineering
 
 [![GitHub](https://img.shields.io/badge/GitHub-aartipaliwal-181717?logo=github)](https://github.com/aartipaliwal)
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/www.linkedin.com/in/aarti-paliwal)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/aarti-paliwal)
 
 ⭐ If you found this useful, consider giving the repo a star!
