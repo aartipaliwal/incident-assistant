@@ -2,27 +2,39 @@
 
 # 🚨 Pipeline Incident Assistant
 
-### Ask a question about a failed data pipeline. Get the fix, with the source.
+### Ask a question about a failed data pipeline. Get the fix, with its source.
 
-A RAG (Retrieval-Augmented Generation) assistant built end to end on **Databricks Free Edition**.
+A RAG (Retrieval-Augmented Generation) assistant built end to end on **Databricks Free Edition**: ingestion, chunking, vector search, grounded answers, evaluation, incremental updates and job orchestration.
 
 ![Databricks](https://img.shields.io/badge/Databricks-Free%20Edition-FF3621?logo=databricks&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-PySpark-3776AB?logo=python&logoColor=white)
-![Delta Lake](https://img.shields.io/badge/Delta%20Lake-Bronze%20Table-00ADD4)
+![Delta Lake](https://img.shields.io/badge/Delta%20Lake-Bronze%20%2B%20Chunks-00ADD4)
 ![Vector Search](https://img.shields.io/badge/Databricks-Vector%20Search-1B3139)
 ![LLM](https://img.shields.io/badge/LLM-Llama%203.3%2070B-7B42BC)
+![Jobs](https://img.shields.io/badge/Orchestration-Databricks%20Jobs-FF3621)
 
 </div>
 
 ---
 
-## 💡 What is this project?
+## 📌 Quick links
 
-When a data pipeline fails, engineers waste time digging through long runbooks to find the fix.
+[Problem](#-the-problem) · [Demo](#-see-it-in-action) · [Features](#-key-features) · [Architecture](#-architecture) · [Evaluation](#-evaluation-small-chunks-vs-large-chunks) · [Incremental updates](#-incremental-updates-no-full-rebuild) · [Orchestration](#-orchestration-with-databricks-jobs) · [Run it yourself](#-run-it-yourself)
 
-This assistant does that search for you. You ask a question in plain English, it finds the right part of the right runbook, and an LLM writes a short answer **based only on those runbooks**.
+---
 
-If the answer is not in the runbooks, it says **"I don't know"** instead of making something up.
+## 🎯 The problem
+
+When a data pipeline fails, engineers lose time digging through long runbooks to find the right fix. The answer is usually in there, buried in a large document.
+
+## 💡 The solution
+
+This assistant does the searching for you:
+
+1. You ask a question in plain English.
+2. It finds the most relevant parts of the runbooks using semantic search.
+3. An LLM writes a short answer **using only those parts** and tells you which runbook it came from.
+4. If the answer is not in the runbooks, it says **"I don't know"** instead of guessing.
 
 ---
 
@@ -36,8 +48,6 @@ If the answer is not in the runbooks, it says **"I don't know"** instead of maki
 >
 > `[source ids: [data_skew]]`
 
-Every answer shows which runbook it came from, so you can trust it and verify it.
-
 | 🔍 Search results | 🤖 RAG answer | 🙅 Out-of-scope question |
 |:---:|:---:|:---:|
 | ![Search results](docs/01-search-results.png) | ![RAG answer](docs/02-rag-answer.png) | ![I don't know](docs/03-i-dont-know.png) |
@@ -46,12 +56,15 @@ Every answer shows which runbook it came from, so you can trust it and verify it
 
 ## ✨ Key features
 
-- 🔎 **Semantic search:** finds the right runbook by meaning, not just keywords.
-- 🧠 **Grounded answers:** the LLM only answers from retrieved runbook text.
-- 🙅 **Hallucination guardrail:** out-of-scope questions get "I don't know".
-- 📎 **Source citations:** every answer lists the runbook it used.
-- ⚖️ **Chunking comparison:** small chunks vs. large chunks, tested and measured.
-- 🔄 **Incremental updates:** edit, add or delete a runbook and only that part is re-processed. No full rebuild.
+| | Feature | What it means |
+|---|---|---|
+| 🔎 | **Semantic search** | Finds the right runbook by meaning, not just matching words |
+| 🧠 | **Grounded answers** | The LLM answers only from retrieved runbook text |
+| 🙅 | **Hallucination guardrail** | Out-of-scope questions get "I don't know" |
+| 📎 | **Source citations** | Every answer lists the runbook it used |
+| ⚖️ | **Chunking comparison** | Small vs. large chunks, tested on the same questions |
+| 🔄 | **Incremental updates** | Only new, changed or deleted runbooks are reprocessed |
+| ⏱️ | **Job orchestration** | The update and evaluation run as a Databricks Job |
 
 ---
 
@@ -62,24 +75,26 @@ Every answer shows which runbook it came from, so you can trust it and verify it
 **In simple words:**
 
 1. Runbooks are loaded into a Delta table (`bronze_docs`).
-2. They are cut into pieces called **chunks**, in two sizes (small and large).
-3. Each chunk is converted into numbers (an **embedding**) and stored in a **Vector Search** index.
-4. When you ask a question, the most similar chunks are retrieved.
-5. Llama 3.3 70B reads those chunks and writes the answer.
+2. They are cut into pieces called **chunks**, in two sizes.
+3. Each chunk is turned into numbers (an **embedding**) and stored in a **Vector Search** index.
+4. A question is embedded the same way and the closest chunks are retrieved.
+5. Llama 3.3 70B reads those chunks and writes the answer with its sources.
+6. An incremental update keeps everything in sync when runbooks change.
 
 ---
 
 ## 🧰 Tech stack
 
-| What | Tool |
+| Layer | Technology |
 |---|---|
-| Platform | Databricks Free Edition |
+| Platform | Databricks Free Edition (serverless compute) |
 | Storage | Unity Catalog Volume, Delta Lake |
 | Processing | Python, PySpark |
 | Embedding model | `databricks-gte-large-en` |
 | Retrieval | Databricks Vector Search |
 | LLM | `databricks-meta-llama-3-3-70b-instruct` |
 | Access | Databricks SDK |
+| Orchestration | Databricks Jobs |
 
 ---
 
@@ -88,15 +103,15 @@ Every answer shows which runbook it came from, so you can trust it and verify it
 ```
 incident-assistant/
 ├── data/
-│   ├── docs_part1.json            # synthetic runbooks (part 1)
-│   └── docs_part2.json            # synthetic runbooks (part 2)
+│   ├── docs_part1.json              # synthetic runbooks (part 1)
+│   └── docs_part2.json              # synthetic runbooks (part 2)
 ├── notebooks/
-│   ├── 01_setup_and_data.ipynb    # schema, volume, bronze table
-│   ├── 02_chunk_and_index.ipynb   # small and large chunk tables
-│   ├── 03_vector_search.ipynb     # endpoint, indexes, search(), ask()
-│   ├── 04_Evaluation.ipynb        # small vs. large chunk comparison
-│   └── 05_incremental_update.ipynb # update only what changed
-├── docs/                          # screenshots and architecture diagram
+│   ├── 01_setup_and_data.ipynb      # schema, volume, bronze table
+│   ├── 02_chunk_and_index.ipynb     # small and large chunk tables
+│   ├── 03_vector_search.ipynb       # endpoint, indexes, search(), ask()
+│   ├── 04_Evaluation.ipynb          # small vs. large chunk comparison
+│   └── 05_incremental_update.ipynb  # update only what changed
+├── docs/                            # screenshots and architecture diagram
 └── README.md
 ```
 
@@ -120,13 +135,14 @@ About 30 synthetic incident runbooks (ADF failures, data skew, late upstream dat
 ### 3. Retrieve and answer
 - `search()` returns the top matching chunks.
 - `ask()` sends the question and chunks to Llama 3.3 70B.
-- The prompt tells the model to use **only** the given context, and to say "I don't know" otherwise.
+- The prompt tells the model to use **only** the given context and to say "I don't know" otherwise.
+- The answer ends with the source runbook IDs.
 
 ---
 
 ## 📊 Evaluation: small chunks vs. large chunks
 
-I wrote test questions with a known correct runbook for each, then checked whether the right runbook showed up in the top results.
+Chunk size is the biggest tuning choice in RAG, so I measured it instead of guessing. I wrote test questions with a known correct runbook for each, ran them against both indexes and checked whether the right runbook appeared in the top results.
 
 ![Evaluation results](docs/04-eval-results.png)
 
@@ -135,24 +151,39 @@ I wrote test questions with a known correct runbook for each, then checked wheth
 | `idx_small` | 61 | [X] | [Y]% |
 | `idx_large` | 30 | [X] | [Y]% |
 
-**Takeaway:** [Write one line here, for example: "Small chunks retrieved the right runbook more often because each chunk covers one topic."]
+**Takeaway:** [One line, for example: "Small chunks found the right runbook more often because each chunk covers a single topic."]
 
 ---
 
 ## 🔄 Incremental updates (no full rebuild)
 
-Runbooks change. Rebuilding everything each time is slow and wasteful, so `05_incremental_update` handles changes smartly:
+Runbooks change. Re-chunking and re-embedding everything for each edit is slow and wasteful, so `05_incremental_update` only processes what changed:
 
 1. Refresh the bronze table.
 2. Detect **new, changed and deleted** runbooks.
-3. Re-chunk **only** those runbooks.
+3. Re-chunk **only** those runbooks in both chunk tables.
 4. Sync both Vector Search indexes and wait until they are ready.
 
-**How I tested it:** I edited the `data_skew` runbook, ran the update, then restored the original from a backup and ran it again. The assistant returned the correct original answer with the right source ID, and a run with no changes added 0 chunks.
+**How I tested it:** I edited the `data_skew` runbook and ran the update, then restored the original from a backup and ran it again. The assistant returned the correct original answer with the right source ID. A run with no changes adds 0 chunks, so the update is safe to repeat.
 
-| Before the update | After restoring |
-|:---:|:---:|
-| ![Before update](docs/05-before-update.png) | *(add an "after" screenshot here)* |
+![Before the update](docs/05-before-update.png)
+
+---
+
+## ⏱️ Orchestration with Databricks Jobs
+
+The pipeline runs as a Databricks Job, `incident_assistant_incremental_update`, with two tasks:
+
+| Task | Purpose |
+|---|---|
+| `05_incremental_update` | Detect changes, re-chunk, sync both indexes |
+| `04_Evaluation` | Quality check on retrieval after the update |
+
+The Job runs on serverless compute and completed successfully (about 10 minutes for a full run).
+
+![Job run](docs/06-job-run.png)
+
+> A time-based schedule can be added in the Job settings. I avoided a "table update" trigger because the Job writes to those same tables and could trigger itself.
 
 ---
 
@@ -171,28 +202,28 @@ Runbooks change. Rebuilding everything each time is slow and wasteful, so `05_in
    ```python
    ask("What should I do if a data skew incident is not resolved in time?")
    ```
+6. **Optional:** create a Job with tasks `05_incremental_update` and `04_Evaluation`.
 
-> ⚠️ **Heads up:** the schema is spelled `workspace.incident_assistent` (a typo I kept in the code). Use the same spelling in your queries, or rename it everywhere.
->
 > 💡 **Tip:** install the Vector Search library in the notebook where you use it, then restart Python. Installing it in a notebook that has other libraries loaded can crash the environment.
 
 ---
 
 ## 📚 What I learned
 
-- Chunk size changes retrieval quality: small chunks are precise, large chunks keep context.
+- Chunk size changes retrieval quality: small chunks are precise, large chunks keep context. Measure it.
 - A strict prompt plus an "I don't know" rule is a simple, effective guardrail against hallucination.
-- Incremental updates save time and make a RAG pipeline realistic for changing documents.
+- Incremental updates make a RAG pipeline practical for documents that keep changing.
+- Evaluation works best when it is part of the pipeline, not an afterthought.
 
 ---
 
 ## 🔮 Future improvements
 
 - Package with **Databricks Asset Bundles (DAB)** for repeatable deployment.
+- Add hybrid search and reranking for better retrieval.
+- Try parent-child retrieval: search small chunks, answer with the larger parent.
+- Use a larger evaluation set and score the generated answers too.
 - Add a chat interface using a Databricks App.
-- Add reranking and metadata filters.
-- Use a larger test set for evaluation.
-- Ingest real incident logs along with runbooks.
 
 ---
 
