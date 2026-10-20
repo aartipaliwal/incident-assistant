@@ -166,7 +166,7 @@ Runbooks change. Re-chunking and re-embedding everything for each edit is slow a
 
 **How I tested it:** I edited the `data_skew` runbook and ran the update, then restored the original from a backup and ran it again. The assistant returned the correct original answer with the right source ID. A run with no changes adds 0 chunks, so the update is safe to repeat.
 
-![Before the update](docs/05-before-update.png)
+
 
 ---
 
@@ -232,6 +232,6 @@ The Job runs on serverless compute and completed successfully (about 10 minutes 
 **Aarti Paliwal**: Associate Software Engineer | Azure Databricks | Data Engineering
 
 [![GitHub](https://img.shields.io/badge/GitHub-aartipaliwal-181717?logo=github)](https://github.com/aartipaliwal)
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/YOUR-HANDLE)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/www.linkedin.com/in/aarti-paliwal))
 
 ⭐ If you found this useful, consider giving the repo a star!
